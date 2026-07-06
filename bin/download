@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/../lib/utils.bash"
+
+version="$(normalize_version "${ASDF_INSTALL_VERSION:?ASDF_INSTALL_VERSION is required}")"
+download_path="${ASDF_DOWNLOAD_PATH:?ASDF_DOWNLOAD_PATH is required}"
+
+download_and_extract "$version" "$download_path"

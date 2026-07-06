@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/../lib/utils.bash"
+
+version="$(normalize_version "${ASDF_INSTALL_VERSION:?ASDF_INSTALL_VERSION is required}")"
+install_path="${ASDF_INSTALL_PATH:?ASDF_INSTALL_PATH is required}"
+download_path="${ASDF_DOWNLOAD_PATH:-}"
+
+require_cmd bash
+require_cmd python3
+
+rm -rf "$install_path"
+mkdir -p "$install_path"
+
+if [ -n "$download_path" ] && [ -d "$download_path" ] && [ -f "$download_path/install.sh" ]; then
+  strip_single_root_dir "$download_path" "$install_path"
+else
+  tmp="$(mktemp -d)"
+  trap 'rm -rf "$tmp"' EXIT
+  download_and_extract "$version" "$tmp"
+  strip_single_root_dir "$tmp" "$install_path"
+fi
+
+if [ ! -f "$install_path/export.sh" ] || [ ! -f "$install_path/install.sh" ]; then
+  fail "downloaded archive does not look like ESP-IDF (missing install.sh/export.sh)"
+fi
+
+cat >"$install_path/get_idf" <<'GET_IDF'
+#!/usr/bin/env bash
+# Source this file to activate ESP-IDF in the current shell:
+#   . "$(asdf where esp-idf)/get_idf"
+# or:
+#   . "$(asdf which get_idf)"
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  cat >&2 <<'EOF'
+get_idf must be sourced so ESP-IDF environment variables affect your current shell.
+
+Use one of:
+  . "$(asdf where esp-idf)/get_idf"
+  . "$(asdf which get_idf)"
+
+For a real get_idf shell command, add this to your shell rc file:
+  get_idf() { . "$(asdf which get_idf)"; }
+EOF
+  exit 1
+fi
+
+_idf_get_idf_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export IDF_PATH="$_idf_get_idf_dir"
+# shellcheck source=/dev/null
+. "$IDF_PATH/export.sh" "$@"
+unset _idf_get_idf_dir
+GET_IDF
+chmod +x "$install_path/get_idf"
+
+# asdf only creates shims for executable files in bin/. ESP-IDF itself keeps most
+# executables elsewhere, so expose get_idf through bin while leaving IDF_PATH at
+# the install root.
+mkdir -p "$install_path/bin"
+cat >"$install_path/bin/get_idf" <<'GET_IDF_BIN'
+#!/usr/bin/env bash
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  cat >&2 <<'EOF'
+get_idf must be sourced so ESP-IDF environment variables affect your current shell.
+
+Use one of:
+  . "$(asdf where esp-idf)/get_idf"
+  . "$(asdf which get_idf)"
+
+For a real get_idf shell command, add this to your shell rc file:
+  get_idf() { . "$(asdf which get_idf)"; }
+EOF
+  exit 1
+fi
+_get_idf_bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$_get_idf_bin_dir/../get_idf" "$@"
+unset _get_idf_bin_dir
+GET_IDF_BIN
+chmod +x "$install_path/bin/get_idf"
+
+printf 'Running ESP-IDF install.sh for toolchain setup\n' >&2
+(
+  cd "$install_path"
+  bash ./install.sh
+)
+
+printf 'ESP-IDF %s installed to %s\n' "$version" "$install_path" >&2
+printf 'Activate it with: . "%s/get_idf"\n' "$install_path" >&2
