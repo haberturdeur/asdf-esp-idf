@@ -3,8 +3,6 @@
 set -euo pipefail
 
 GH_REPO="espressif/esp-idf"
-GH_RELEASES_API="https://api.github.com/repos/${GH_REPO}/releases"
-GH_RELEASES_URL="https://github.com/${GH_REPO}/releases"
 
 fail() {
   printf 'asdf-esp-idf: %s\n' "$*" >&2
@@ -46,35 +44,11 @@ fetch_release_tags() {
   # GitHub's generated "Source code" archives are intentionally ignored: they do
   # not include submodules. Release assets named esp-idf-vX.Y.Z.zip do include
   # submodules and are the only versions listed here.
-  curl -fsSL "$GH_RELEASES_API?per_page=100" | python3 -c '
-import json
-import re
-import sys
-
-releases = json.load(sys.stdin)
-versions = set()
-for release in releases:
-    for asset in release.get("assets", []):
-        name = asset.get("name", "")
-        match = re.fullmatch(r"esp-idf-v(.+)\.zip", name)
-        if match:
-            versions.add(match.group(1))
-
-def key(version):
-    main, _, suffix = version.partition("-")
-    nums = [int(part) for part in main.split(".") if part.isdigit()]
-    nums = (nums + [0, 0, 0])[:3]
-    # Stable releases sort after prereleases for the same numeric version.
-    stable_rank = 1 if not suffix else 0
-    return (*nums, stable_rank, suffix)
-
-for version in sorted(versions, key=key, reverse=True):
-    print(version)
-'
+  python3 "$(dirname "${BASH_SOURCE[0]}")/releases.py" "$@"
 }
 
 latest_stable() {
-  fetch_release_tags | grep -Ev '(^|[-.])(rc|alpha|beta|preview|dev)([0-9.-]|$)' | head -n 1
+  fetch_release_tags --latest "${1:-}"
 }
 
 strip_single_root_dir() {
@@ -88,27 +62,35 @@ strip_single_root_dir() {
   fi
 }
 
-download_and_extract() {
-  local version="$1" dest="$2"
+download_and_extract() (
+  # A subshell keeps cleanup traps independent of the install hook's traps.
+  local version="$1" dest="${2%/}"
   require_cmd curl
   require_cmd unzip
+  [ -n "$dest" ] || fail "download path must not be the filesystem root"
 
   local url archive tmp
   url="$(asset_url_for_version "$version")"
-  archive="$dest/$(asset_name_for_version "$version")"
-  tmp="$dest/.extract"
-
-  mkdir -p "$dest"
-  rm -rf "$tmp"
-  mkdir -p "$tmp"
+  mkdir -p "$(dirname "$dest")"
+  tmp="$(mktemp -d "${dest}.tmp.XXXXXX")"
+  trap 'rm -rf "$tmp"' EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  archive="$tmp/archive.zip"
+  mkdir -p "$tmp/extract" "$tmp/source"
 
   printf 'Downloading %s\n' "$url" >&2
   curl -fL --retry 3 --connect-timeout 20 -o "$archive" "$url"
 
   printf 'Extracting %s\n' "$archive" >&2
-  unzip -q "$archive" -d "$tmp"
-  rm -f "$archive"
+  unzip -q "$archive" -d "$tmp/extract"
+  strip_single_root_dir "$tmp/extract" "$tmp/source"
 
-  strip_single_root_dir "$tmp" "$dest"
-  rm -rf "$tmp"
-}
+  # Publish only a complete extraction, without overwriting existing downloads.
+  if [ -d "$dest" ]; then
+    rmdir "$dest" || fail "download directory must be empty: $dest"
+  elif [ -e "$dest" ]; then
+    fail "download path already exists: $dest"
+  fi
+  mv "$tmp/source" "$dest"
+)

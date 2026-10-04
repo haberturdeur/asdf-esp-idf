@@ -19,10 +19,8 @@ code" archives do not.
 ## Install the plugin
 
 ```sh
-asdf plugin add esp-idf /home/tom/asdf-esp-idf
+asdf plugin add esp-idf https://github.com/haberturdeur/asdf-esp-idf.git
 ```
-
-When published, replace `/home/tom/asdf-esp-idf` with the plugin git URL.
 
 ## Install ESP-IDF
 
@@ -41,8 +39,7 @@ asdf set -u esp-idf 5.5.4
 
 ## Activate ESP-IDF
 
-Shell scripts cannot alter their parent shell unless they are sourced, so use
-one of these forms:
+In Bash or zsh, source the helper to activate ESP-IDF in your current shell:
 
 ```sh
 . "$(asdf where esp-idf)/get_idf"
@@ -69,3 +66,18 @@ to the selected asdf install.
 - The plugin lists only release zip assets named `esp-idf-v*.zip`.
 - `asdf install` runs ESP-IDF's `install.sh` after extraction to install the
   required toolchains under Espressif's normal locations.
+
+## Development
+
+Run the offline regression suite with Python 3, Bash, zsh, and unzip installed:
+
+```sh
+python3 -B -m unittest discover -s tests -v
+```
+
+The suite uses local release and archive fixtures; it does not download ESP-IDF
+or install toolchains. CI runs it on Linux and macOS.
+
+## License
+
+[MIT](LICENSE).

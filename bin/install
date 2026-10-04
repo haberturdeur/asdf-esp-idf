@@ -32,7 +32,8 @@ cat >"$install_path/get_idf" <<'GET_IDF'
 # or:
 #   . "$(asdf which get_idf)"
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+if { [ -n "${BASH_VERSION:-}" ] && [[ "${BASH_SOURCE[0]}" == "$0" ]]; } ||
+   { [ -n "${ZSH_VERSION:-}" ] && [[ "${ZSH_EVAL_CONTEXT:-}" != *:file ]]; }; then
   cat >&2 <<'EOF'
 get_idf must be sourced so ESP-IDF environment variables affect your current shell.
 
@@ -46,11 +47,16 @@ EOF
   exit 1
 fi
 
-_idf_get_idf_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -n "${ZSH_VERSION:-}" ]; then
+  _idf_get_idf_file="${(%):-%x}"
+else
+  _idf_get_idf_file="${BASH_SOURCE[0]}"
+fi
+_idf_get_idf_dir="$(cd "$(dirname "$_idf_get_idf_file")" && pwd)" || return
 export IDF_PATH="$_idf_get_idf_dir"
+unset _idf_get_idf_file _idf_get_idf_dir
 # shellcheck source=/dev/null
 . "$IDF_PATH/export.sh" "$@"
-unset _idf_get_idf_dir
 GET_IDF
 chmod +x "$install_path/get_idf"
 
@@ -60,7 +66,8 @@ chmod +x "$install_path/get_idf"
 mkdir -p "$install_path/bin"
 cat >"$install_path/bin/get_idf" <<'GET_IDF_BIN'
 #!/usr/bin/env bash
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+if { [ -n "${BASH_VERSION:-}" ] && [[ "${BASH_SOURCE[0]}" == "$0" ]]; } ||
+   { [ -n "${ZSH_VERSION:-}" ] && [[ "${ZSH_EVAL_CONTEXT:-}" != *:file ]]; }; then
   cat >&2 <<'EOF'
 get_idf must be sourced so ESP-IDF environment variables affect your current shell.
 
@@ -73,10 +80,11 @@ For a real get_idf shell command, add this to your shell rc file:
 EOF
   exit 1
 fi
-_get_idf_bin_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=/dev/null
-. "$_get_idf_bin_dir/../get_idf" "$@"
-unset _get_idf_bin_dir
+if [ -n "${ZSH_VERSION:-}" ]; then
+  . "$(dirname "${(%):-%x}")/../get_idf" "$@"
+else
+  . "$(dirname "${BASH_SOURCE[0]}")/../get_idf" "$@"
+fi
 GET_IDF_BIN
 chmod +x "$install_path/bin/get_idf"
 
